@@ -130,6 +130,7 @@ def parse_args():
         # choices=["eager", "sdpa", "flash_attention_2"],
         help="Attention implementation for both teacher and student models: eager, sdpa, or flash_attention_2",
     )
+    parser.add_argument("--skip_quant_conv_modules", action="store_true", help="whether to skip quantizing conv modules.")
     parser.add_argument("--cpu_offload_modules", action="store_true", help="whether to offload modules to CPU.")
     parser.add_argument("--cpu_offload_activations", action="store_true", help="whether to offload activations to CPU.")
     parser.add_argument("--eval_perplexity", action="store_true", help="whether to eval perplexity after quantization.")
@@ -235,11 +236,12 @@ def main():
         block_modules=args.block_modules,
         post_block_modules=args.post_block_modules,
         quant_non_block_modules=args.quant_non_block_modules,
+        skip_quant_conv_modules=args.skip_quant_conv_modules,
         cpu_offload_modules=args.cpu_offload_modules,
         cpu_offload_activations=args.cpu_offload_activations,
         device=device,
         verbose=args.verbose,
-        save_dir=args.save_dir
+        save_dir=args.save_dir,
     )
     
     # Prepare save dir

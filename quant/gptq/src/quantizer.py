@@ -35,6 +35,7 @@ class Quantizer:
         block_modules: str,
         save_dir: str,
         quant_non_block_modules: bool = False,
+        skip_quant_conv_modules: bool = False,
         device: Optional[torch.device] = None,
         cpu_offload_modules: bool = False,
         cpu_offload_activations: bool = False,
@@ -49,6 +50,7 @@ class Quantizer:
         self.pre_block_modules = pre_block_modules
         self.post_block_modules = post_block_modules
         self.block_modules = block_modules
+        self.skip_quant_conv_modules = skip_quant_conv_modules
         self.device = device
         self.cpu_offload_modules = cpu_offload_modules
         self.cpu_offload_activations = cpu_offload_activations
@@ -143,7 +145,7 @@ class Quantizer:
             # get layer prefix to select layers only within the block
             layer_prefix = f"{self.block_modules}.{block_id}."
             layers = select_layers(
-                self.model, layer_prefix, self.quantizable_modules, LINEAR_LAYERS
+                self.model, layer_prefix, self.quantizable_modules, LINEAR_LAYERS if not self.skip_quant_conv_modules else (nn.Linear)
             )
             handles, hooks = self._prepare_hooks_and_handles(layers)
 
