@@ -303,6 +303,10 @@ def parse_args():
         help="Attention implementation: eager, sdpa, or flash_attention_2",
     )
     parser.add_argument("--use_fast_tokenizer", action="store_true", help="Whether to use fast tokenizer.")
+
+    parser.add_argument("--configuration_name", type=str, default=None, help="Name of the configuration file.")
+
+    parser.add_argument("--output_dir", type=str, default=None, help="Output directory.")
     args = parser.parse_args()
     return args
 
@@ -779,8 +783,17 @@ def main():
         print(f"Train fitnesses: {train_fitness:.2e}")
         log_dict["train_fitness"] = train_fitness
     # Save final configuration
-    configuration_name = f"evo-{args.fitness_fn}-configuration-{args.target_bitwidth}.txt"
-    with open(os.path.join(args.quant_weights_path, configuration_name), "w") as f:
+    if args.configuration_name is None:
+        configuration_name = f"evo-{args.fitness_fn}-configuration-{args.target_bitwidth}.txt"
+    else:
+        configuration_name = args.configuration_name
+
+    if args.output_dir is None:
+        output_dir = args.quant_weights_path
+    else:
+        output_dir = args.output_dir
+
+    with open(os.path.join(output_dir, configuration_name), "w") as f:
         for i in range(num_groups):
             lines = []
             for layer_name, bitwidth in zip(grouped_layer_names[i], parent[i]):
