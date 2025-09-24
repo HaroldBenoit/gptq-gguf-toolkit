@@ -29,6 +29,21 @@ except ImportError as e:
     print(f"Specific error: {e}")
     exit(1)
 
+def find_linear_names(model, curr_prefix="", global_list=None):
+    """
+    This function finds all the linear layer names in the model.
+    """
+    if global_list is None:
+        global_list = []
+    for name, module in model.named_modules():
+        if isinstance(module, torch.nn.Linear):
+            global_list.append(curr_prefix + name + ".weight")
+        elif hasattr(module, "children"):
+            for child in module.children():
+                find_linear_names(child, curr_prefix + name + ".")
+
+    return global_list
+
 
 class GGUFSplitter:
     def __init__(self, model_path: str, output_dir: str, use_exact_bitwidth: bool = False):
@@ -145,141 +160,158 @@ class GGUFSplitter:
         print(f"Built database with {len(database)} GGUF tensors")
         return database
 
-    def map_hf_to_gguf_name(self, hf_name: str) -> Optional[str]:
-        """Map HuggingFace parameter name to corresponding GGUF tensor name for MoE models"""
 
-        # Layer mapping from HF to GGUF (updated for MoE)
-        layer_mapping = {
-            # Regular attention layers
-            'self_attn.k_proj': 'attn_k',
-            'self_attn.q_proj': 'attn_q',
-            'self_attn.v_proj': 'attn_v',
-            'self_attn.o_proj': 'attn_output',
-            'input_layernorm': 'attn_norm',
-            'post_attention_layernorm': 'ffn_norm',
+    ## TODO handle MoE weights differently if necessary
+    def map_hf_to_gguf_name(self, hf_name: str, model) -> Optional[str]:
+        from gguf import MODEL_ARCH_NAMES, get_tensor_name_map
 
-            # Regular FFN layers (for non-MoE models)
-            'mlp.gate_proj': 'ffn_gate',
-            'mlp.up_proj': 'ffn_up',
-            'mlp.down_proj': 'ffn_down',
+        model_type = model.config.model_type
+        n_layers = model.config.num_hidden_layers
+        for key,value in MODEL_ARCH_NAMES.items():
+            if model_type == value:
+                arch = key
+                break
+        
+        mapping = get_tensor_name_map(arch, n_blocks=n_layers)
+        short_name = hf_name[:-len(".weight")]
 
-            # MoE expert mappings - individual experts get consolidated
-            'mlp.experts.*.down_proj': 'ffn_down_exps',
-            'mlp.experts.*.gate_proj': 'ffn_gate_exps',
-            'mlp.experts.*.up_proj': 'ffn_up_exps',
+        return mapping[short_name] + ".weight"
 
-            # Shared expert mappings (if present)
-            'mlp.shared_expert.down_proj': 'ffn_down_shexp',
-            'mlp.shared_expert.gate_proj': 'ffn_gate_shexp',
-            'mlp.shared_expert.up_proj': 'ffn_up_shexp',
+    # def map_hf_to_gguf_name2(self, hf_name: str) -> Optional[str]:
+    #     """Map HuggingFace parameter name to corresponding GGUF tensor name for MoE models"""
 
-            # Gating/routing network
-            'mlp.gate': 'ffn_gate_inp',
-            'mlp.shared_expert_gate': 'ffn_gate_inp_shexp',
-        }
+    #     # Layer mapping from HF to GGUF (updated for MoE)
+    #     layer_mapping = {
+    #         # Regular attention layers
+    #         'self_attn.k_proj': 'attn_k',
+    #         'self_attn.q_proj': 'attn_q',
+    #         'self_attn.v_proj': 'attn_v',
+    #         'self_attn.o_proj': 'attn_output',
+    #         'input_layernorm': 'attn_norm',
+    #         'post_attention_layernorm': 'ffn_norm',
 
-        # Handle layer weights (model.layers.X.component.weight)
-        if 'model.layers.' in hf_name:
-            parts = hf_name.split('.')
-            if len(parts) >= 4:
-                try:
-                    layer_num = int(parts[2])  # model.layers.{X}.component
-                except ValueError:
-                    return None
+    #         # Regular FFN layers (for non-MoE models)
+    #         'mlp.gate_proj': 'ffn_gate',
+    #         'mlp.up_proj': 'ffn_up',
+    #         'mlp.down_proj': 'ffn_down',
 
-                # Extract component (e.g., 'mlp.experts.0.down_proj', 'self_attn.q_proj')
-                component = '.'.join(parts[3:])
+    #         # MoE expert mappings - individual experts get consolidated
+    #         'mlp.experts.*.down_proj': 'ffn_down_exps',
+    #         'mlp.experts.*.gate_proj': 'ffn_gate_exps',
+    #         'mlp.experts.*.up_proj': 'ffn_up_exps',
 
-                # Remove .weight suffix if present
-                if component.endswith('.weight'):
-                    component = component[:-7]
+    #         # Shared expert mappings (if present)
+    #         'mlp.shared_expert.down_proj': 'ffn_down_shexp',
+    #         'mlp.shared_expert.gate_proj': 'ffn_gate_shexp',
+    #         'mlp.shared_expert.up_proj': 'ffn_up_shexp',
 
-                # Handle MoE expert weights specifically
-                if 'mlp.experts.' in component:
-                    # Extract expert number and projection type
-                    # e.g., 'mlp.experts.0.down_proj' -> 'mlp.experts.*.down_proj'
-                    expert_parts = component.split('.')
-                    if len(expert_parts) >= 4 and expert_parts[0] == 'mlp' and expert_parts[1] == 'experts':
-                        try:
-                            expert_num = int(expert_parts[2])
-                            proj_type = expert_parts[3]
+    #         # Gating/routing network
+    #         'mlp.gate': 'ffn_gate_inp',
+    #         'mlp.shared_expert_gate': 'ffn_gate_inp_shexp',
+    #     }
 
-                            # Create pattern for mapping
-                            expert_pattern = f"mlp.experts.*.{proj_type}"
+    #     # Handle layer weights (model.layers.X.component.weight)
+    #     if 'model.layers.' in hf_name:
+    #         parts = hf_name.split('.')
+    #         if len(parts) >= 4:
+    #             try:
+    #                 layer_num = int(parts[2])  # model.layers.{X}.component
+    #             except ValueError:
+    #                 return None
 
-                            if expert_pattern in layer_mapping:
-                                gguf_component = layer_mapping[expert_pattern]
-                                candidate = f"blk.{layer_num}.{gguf_component}.weight"
-                                if candidate in self.gguf_layer_database:
-                                    return candidate
+    #             # Extract component (e.g., 'mlp.experts.0.down_proj', 'self_attn.q_proj')
+    #             component = '.'.join(parts[3:])
 
-                                # Try without .weight suffix
-                                candidate_no_weight = f"blk.{layer_num}.{gguf_component}"
-                                if candidate_no_weight in self.gguf_layer_database:
-                                    return candidate_no_weight
+    #             # Remove .weight suffix if present
+    #             if component.endswith('.weight'):
+    #                 component = component[:-7]
 
-                        except (ValueError, IndexError):
-                            pass
+    #             # Handle MoE expert weights specifically
+    #             if 'mlp.experts.' in component:
+    #                 # Extract expert number and projection type
+    #                 # e.g., 'mlp.experts.0.down_proj' -> 'mlp.experts.*.down_proj'
+    #                 expert_parts = component.split('.')
+    #                 if len(expert_parts) >= 4 and expert_parts[0] == 'mlp' and expert_parts[1] == 'experts':
+    #                     try:
+    #                         expert_num = int(expert_parts[2])
+    #                         proj_type = expert_parts[3]
 
-                # Handle regular (non-expert) components
-                elif component in layer_mapping:
-                    gguf_component = layer_mapping[component]
-                    candidate = f"blk.{layer_num}.{gguf_component}.weight"
-                    if candidate in self.gguf_layer_database:
-                        return candidate
+    #                         # Create pattern for mapping
+    #                         expert_pattern = f"mlp.experts.*.{proj_type}"
 
-                    # Try without .weight suffix
-                    candidate_no_weight = f"blk.{layer_num}.{gguf_component}"
-                    if candidate_no_weight in self.gguf_layer_database:
-                        return candidate_no_weight
+    #                         if expert_pattern in layer_mapping:
+    #                             gguf_component = layer_mapping[expert_pattern]
+    #                             candidate = f"blk.{layer_num}.{gguf_component}.weight"
+    #                             if candidate in self.gguf_layer_database:
+    #                                 return candidate
 
-        # Handle non-layer weights
-        else:
-            # Remove .weight suffix for processing
-            base_name = hf_name
-            has_weight_suffix = base_name.endswith('.weight')
-            if has_weight_suffix:
-                base_name = base_name[:-7]
+    #                             # Try without .weight suffix
+    #                             candidate_no_weight = f"blk.{layer_num}.{gguf_component}"
+    #                             if candidate_no_weight in self.gguf_layer_database:
+    #                                 return candidate_no_weight
 
-            # Map common non-layer weights
-            candidate = None
-            if 'embed_tokens' in base_name:
-                candidate = 'token_embd.weight'
-            elif 'lm_head' in base_name:
-                candidate = 'output.weight'
-            elif base_name == 'model.norm':
-                candidate = 'output_norm.weight'
-            else:
-                # Try original name first
-                candidate = hf_name
+    #                     except (ValueError, IndexError):
+    #                         pass
 
-            # Check if candidate exists in database
-            if candidate and candidate in self.gguf_layer_database:
-                return candidate
+    #             # Handle regular (non-expert) components
+    #             elif component in layer_mapping:
+    #                 gguf_component = layer_mapping[component]
+    #                 candidate = f"blk.{layer_num}.{gguf_component}.weight"
+    #                 if candidate in self.gguf_layer_database:
+    #                     return candidate
 
-            # Try with model. prefix if not already present
-            if candidate and not candidate.startswith('model.'):
-                candidate_with_model = f"model.{candidate}"
-                if candidate_with_model in self.gguf_layer_database:
-                    return candidate_with_model
+    #                 # Try without .weight suffix
+    #                 candidate_no_weight = f"blk.{layer_num}.{gguf_component}"
+    #                 if candidate_no_weight in self.gguf_layer_database:
+    #                     return candidate_no_weight
 
-            # Fallback: try without .weight suffix
-            if has_weight_suffix:
-                candidate_no_weight = base_name
-                if candidate_no_weight in self.gguf_layer_database:
-                    return candidate_no_weight
+    #     # Handle non-layer weights
+    #     else:
+    #         # Remove .weight suffix for processing
+    #         base_name = hf_name
+    #         has_weight_suffix = base_name.endswith('.weight')
+    #         if has_weight_suffix:
+    #             base_name = base_name[:-7]
 
-                # Try with model. prefix and no weight
-                if not candidate_no_weight.startswith('model.'):
-                    candidate_model_no_weight = f"model.{candidate_no_weight}"
-                    if candidate_model_no_weight in self.gguf_layer_database:
-                        return candidate_model_no_weight
+    #         # Map common non-layer weights
+    #         candidate = None
+    #         if 'embed_tokens' in base_name:
+    #             candidate = 'token_embd.weight'
+    #         elif 'lm_head' in base_name:
+    #             candidate = 'output.weight'
+    #         elif base_name == 'model.norm':
+    #             candidate = 'output_norm.weight'
+    #         else:
+    #             # Try original name first
+    #             candidate = hf_name
 
-        # Final fallback: try direct exact match
-        if hf_name in self.gguf_layer_database:
-            return hf_name
+    #         # Check if candidate exists in database
+    #         if candidate and candidate in self.gguf_layer_database:
+    #             return candidate
 
-        return None
+    #         # Try with model. prefix if not already present
+    #         if candidate and not candidate.startswith('model.'):
+    #             candidate_with_model = f"model.{candidate}"
+    #             if candidate_with_model in self.gguf_layer_database:
+    #                 return candidate_with_model
+
+    #         # Fallback: try without .weight suffix
+    #         if has_weight_suffix:
+    #             candidate_no_weight = base_name
+    #             if candidate_no_weight in self.gguf_layer_database:
+    #                 return candidate_no_weight
+
+    #             # Try with model. prefix and no weight
+    #             if not candidate_no_weight.startswith('model.'):
+    #                 candidate_model_no_weight = f"model.{candidate_no_weight}"
+    #                 if candidate_model_no_weight in self.gguf_layer_database:
+    #                     return candidate_model_no_weight
+
+    #     # Final fallback: try direct exact match
+    #     if hf_name in self.gguf_layer_database:
+    #         return hf_name
+
+    #     return None
 
     def save_layer_mapping(self, mapping: Dict[str, str], output_dir: Path):
         """Save the HF to GGUF layer mapping to a file"""
@@ -484,11 +516,6 @@ class GGUFSplitter:
             print(f"Warning: Could not load tokenizer: {e}")
             tokenizer = None
 
-        def process_layer(name, layer: torch.nn.Module) -> bool:
-            layer_regex = re.compile(
-                r'^model\.layers\..*\.(q_proj|k_proj|v_proj|o_proj|gate_proj|up_proj|down_proj)\.weight$')
-            return re.search(layer_regex, name)
-
         # Initialize manifest
         hf_manifest = {
             "model_info": {
@@ -510,12 +537,14 @@ class GGUFSplitter:
         mapping = {}  # Store HF to GGUF name mappings
         mapped_count = 0
 
+        linear_names = find_linear_names(model) ## finds all linear layer names in the model
+
         # Process model parameters
         for name, layer in model.named_parameters():
-            if process_layer(name, layer):
+            if name in linear_names and "lm_head" not in name: ## exclude lm_head
                 processed_count += 1
 
-                gguf_name = self.map_hf_to_gguf_name(name)
+                gguf_name = self.map_hf_to_gguf_name(name, model)
                 bitwidth = None
                 quantization = None
 
