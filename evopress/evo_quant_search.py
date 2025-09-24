@@ -190,8 +190,8 @@ def selection(
         target_logits_minibatch = None
 
     fitnesses = []
-    for candidate in candidates:
-        load_layers(model, grouped_layer_names, candidate, quant_weights_path, available_bitwidths)
+    for candidate in trange(len(candidates), desc="Evaluating candidates", leave=False):
+        load_layers(model, grouped_layer_names, candidates[candidate], quant_weights_path, available_bitwidths)
         fitness = compute_fitness(model, calibration_minibatch, fitness_fn, target_logits_minibatch)
         fitnesses.append(fitness)
     # Keep only best
@@ -465,6 +465,7 @@ def main():
 
             candidates.append(candidate)
 
+        print(f"Evaluating {len(candidates)} initial candidates...")
         candidates, train_fitnesses = selection(
             model=model,
             grouped_layer_names=grouped_layer_names,
