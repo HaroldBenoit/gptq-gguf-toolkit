@@ -4,6 +4,7 @@ setup_evo_press_lfm.py - Complete EvoPress setup for LFM2 model
 Python translation of setup_evopress_lfm2_gptq.sh
 """
 
+import json
 from typing import Any
 
 
@@ -211,17 +212,43 @@ def main():
 
         os.chdir("..")
 
+    hf_to_gguf_mapping_path = full_path_database_dir / "layers-hf" / "hf_to_gguf_mapping.json"
+    with open(hf_to_gguf_mapping_path, "r") as f:
+        hf_to_gguf_mapping = json.load(f)
+
+    new_configuration=[]
+    with open(full_configuration_path, "r") as f:
+        for line in f.readlines():
+            line = line.strip()
+            if line:
+                key, value = line.split(":")
+                key = key.strip()
+                value = value.strip()
+                new_key = hf_to_gguf_mapping[key+".weight"]
+                new_configuration.append(f"{new_key}: {value}")
+
+    new_full_configuration_path = full_path_database_dir / "layers-gguf" / configuration_name
+
+    with open(new_full_configuration_path, "w") as f:
+        for line in new_configuration:
+            f.write(line + "\n")
+    
+
+    output_gguf_path = Path.cwd() / f"{model_short_name}-optimized-{args.target_bitwidth}bit.gguf"
+
+
     # Step 4: Convert configuration and prepare for assembly
     print("\nStep 4: Converting configuration for model assembly...")
     os.chdir("mapper")
 
+
     cmd = [
         "python", "gguf_stitcher.py",
-        str(full_path_database_dir),
-        f"{model_short_name}-optimized-{args.target_bitwidth}bit.gguf",
-        "--config", str(full_configuration_path),
+        str(full_path_database_dir / "layers-gguf"),
+        str(output_gguf_path),
+        "--config", str(new_full_configuration_path),
         "--original-model", str(base_gguf_path.resolve()),
-        "--default-quant-type", "F16"
+        "--default-quant-type", "F16",
     ]
     run_command(cmd)
 
