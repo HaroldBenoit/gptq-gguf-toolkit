@@ -3,6 +3,7 @@ import random
 import copy
 import os
 import math
+import sys
 from tqdm import trange
 from typing import List, Tuple, Sequence, Optional, Union, Dict
 
@@ -324,7 +325,39 @@ def main():
     # Init W&B logger
     if args.log_wandb:
         assert has_wandb, "`wandb` not installed, try pip install `wandb`"
-        wandb.init(config=args)
+
+        # Create meaningful run name
+        run_name = f"evo_search_{args.fitness_fn}_{args.target_bitwidth}bit_{args.generations}gen"
+        if args.configuration_name:
+            run_name += f"_{args.configuration_name}"
+
+        # Add relevant tags
+        tags = [
+            f"fitness_{args.fitness_fn}",
+            f"target_{args.target_bitwidth}bit",
+            f"generations_{args.generations}",
+            f"offspring_{args.offspring}",
+            f"group_rule_{args.group_rule}"
+        ]
+
+        # Add system info and model info to config
+        config_dict = vars(args).copy()
+        config_dict.update({
+            "torch_version": torch.__version__,
+            "transformers_version": getattr(__import__('transformers'), '__version__', 'unknown'),
+            "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+            "cuda_available": torch.cuda.is_available(),
+            "gpu_count": torch.cuda.device_count() if torch.cuda.is_available() else 0,
+        })
+
+        wandb.init(
+            entity="liquid-ai",
+            project="evo_search_quant",
+            name=run_name,
+            tags=tags,
+            config=config_dict,
+            save_code=True
+        )
     # init device
     device = f"cuda"
     if args.dtype != "auto":
