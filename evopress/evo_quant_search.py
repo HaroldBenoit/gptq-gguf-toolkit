@@ -793,20 +793,30 @@ def main():
     else:
         output_dir = args.output_dir
 
+    config_to_write = {}
+
+
+    for i in range(num_groups):
+        lines = []
+        for layer_name, bitwidth in zip(grouped_layer_names[i], parent[i]):
+            # Find the filename for this bitwidth
+            filename = None
+            for bw, fn in available_bitwidths[layer_name]:
+                if abs(bw - bitwidth) < 1e-6:
+                    filename = fn
+                    break
+            config_to_write[layer_name] = (bitwidth, filename)
+            lines.append(f"{layer_name}: {bitwidth} ({filename})")
+
+
+
     with open(os.path.join(output_dir, configuration_name), "w") as f:
-        for i in range(num_groups):
-            lines = []
-            for layer_name, bitwidth in zip(grouped_layer_names[i], parent[i]):
-                # Find the filename for this bitwidth
-                filename = None
-                for bw, fn in available_bitwidths[layer_name]:
-                    if abs(bw - bitwidth) < 1e-6:
-                        filename = fn
-                        break
-                lines.append(f"{layer_name}: {bitwidth} ({filename})")
-            f.write("\n".join(lines))
-            if i != num_groups - 1:
-                f.write("\n")
+        ## sort by layer number
+        sorted_keys = sorted(config_to_write.keys(), key=lambda x: int(x.split(".")[2]))
+        for layer_name in sorted_keys:
+            bitwidth, filename = config_to_write[layer_name]
+            f.write(f"{layer_name}: {bitwidth} ({filename})\n")
+
     # Log final configuration
     print("Final configuration:")
     for group in parent:
