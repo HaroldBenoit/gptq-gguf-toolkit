@@ -76,7 +76,7 @@ def main():
     parser.add_argument("--offspring", type=int, default=128, help="Number of offspring per generation")
     parser.add_argument("--survivors-per-selection", nargs="+", type=int, default=[16, 4, 1], help="Survivors per selection")
     parser.add_argument("--tokens-per-selection", nargs="+", type=int, default=[2048, 16384, 131072], help="Tokens per selection")
-    parser.add_argument("--calibration-data", default="fineweb_edu", help="Calibration dataset")
+    parser.add_argument("--calibration-data", default="LiquidAI/liquidtwo3", help="Calibration dataset")
     parser.add_argument("--calibration-tokens", type=int, default=2097152, help="Number of calibration tokens")
     parser.add_argument("--initially-generated", type=int, default=50, help="Number of initial candidates for non-integer bitwidth")
     parser.add_argument("--initial-tokens", type=int, default=4096, help="Number of tokens for initial selection")
@@ -97,7 +97,7 @@ def main():
 
     # Set default directories based on model name
     database_dir = args.database_dir or f"./ep_database_{model_short_name.lower().replace('-', '_')}"
-    quantized_dir = args.quantized_dir or f"./quantized_models_{model_short_name.lower().replace('-', '_')}"
+    quantized_dir = args.quantized_dir or f"./quantized_models_{model_short_name.lower().replace('-', '_')}" + ("_imatrix" if args.imatrix else "")
     results_dir = args.results_dir or f"./results_{model_short_name.lower().replace('-', '_')}"
     base_gguf_path = args.base_gguf_path
 
@@ -112,6 +112,29 @@ def main():
                 "--outfile", str(base_gguf_path),
                 args.model
             ])
+
+    if args.imatrix:
+        dataset_name = Path(args.calibration_data).name
+        expected_calibration_data = f"{dataset_name}_calibration.txt"
+        if not os.path.exists(expected_calibration_data):
+            print(f"Calibration data not found, creating {expected_calibration_data}...")
+            run_command([
+                "python", "data/create_imatrix_calibration_data.py",
+                "--model", args.model,
+                "--calibration-data", args.calibration_data,
+            ])
+
+        expected_imatrix = f"{model_short_name}_{dataset_name}_imatrix.gguf"
+
+        if not os.path.exists(expected_imatrix):
+            print(f"Imatrix not found, creating {expected_imatrix}...")
+            run_command([
+                "third_party/llama.cpp/build/bin/llama-imatrix",
+                "-m", str(base_gguf_path),
+                "-f", str(expected_calibration_data),
+                "-o", str(expected_imatrix),
+            ])
+
 
     print(f"=== EvoPress Setup for {model_short_name} ===")
     print(f"Model: {args.model}")
@@ -147,7 +170,8 @@ def main():
             "./run_quant.sh",
             str(base_gguf_path),
             " ".join(quant_levels),
-            "--output-dir", quantized_dir
+            "--output-dir", quantized_dir,
+            "--imatrix", str(expected_imatrix),
         ])
 
 
