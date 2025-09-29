@@ -44,6 +44,25 @@ def download_model_if_not_local(model_path, local_dir=None):
     return model_path
 
 
+def create_evopress_config_name(args):
+    return f"evo-kl-gens-{args.generations}-configuration-{args.target_bitwidth}bit.txt"
+
+def save_evopress_config(filename, args):
+    evopress_args = {
+        "fitness_fn": "kl",
+        "generations": args.generations,
+        "target_bitwidth": args.target_bitwidth,
+        "offspring": args.offspring,
+        "survivors_per_selection": args.survivors_per_selection,
+        "tokens_per_selection": args.tokens_per_selection,
+        "calibration_data": args.calibration_data,
+        "calibration_tokens": args.calibration_tokens,
+        "initially_generated": args.initially_generated,
+        "initial_tokens": args.initial_tokens,
+    }
+    with open(filename, "w") as f:
+        json.dump(evopress_args, f)
+
 def main():
     parser = argparse.ArgumentParser(description="Complete EvoPress setup for any model")
     parser.add_argument("--model", required=True, help="Model name or path")
@@ -61,6 +80,8 @@ def main():
     parser.add_argument("--calibration-tokens", type=int, default=2097152, help="Number of calibration tokens")
     parser.add_argument("--initially-generated", type=int, default=50, help="Number of initial candidates for non-integer bitwidth")
     parser.add_argument("--initial-tokens", type=int, default=4096, help="Number of tokens for initial selection")
+    parser.add_argument("--not-imatrix", action="store_false", default=True, dest="imatrix", help=" imatrix for quantization")
+    parser.add_argument("--no_wandb", action="store_true", help="Disable wandb logging")
 
     args = parser.parse_args()
 
@@ -167,7 +188,8 @@ def main():
 
 
 
-    configuration_name = f"evo-kl-configuration-{args.target_bitwidth}.txt"
+    configuration_name = create_evopress_config_name(args)
+    save_evopress_config(full_path_database_dir / "layers-hf" / (configuration_name[:-len(".txt")] + "_config.json"), args)
     output_dir = full_path_database_dir / "layers-hf"
     full_configuration_path: Any | Path = output_dir / configuration_name
 
@@ -208,6 +230,9 @@ def main():
             "--eval_tokens", "1024"
         ])
 
+        if not args.no_wandb:
+            cmd.append("--log_wandb")
+
         run_command(cmd)
 
         os.chdir("..")
@@ -234,7 +259,7 @@ def main():
             f.write(line + "\n")
     
 
-    output_gguf_path = Path.cwd() / f"{model_short_name}-optimized-{args.target_bitwidth}bit.gguf"
+    output_gguf_path = Path.cwd() / f"{model_short_name}-optimized-{configuration_name[:-len(".txt")]}.gguf"
 
 
     # Step 4: Convert configuration and prepare for assembly
