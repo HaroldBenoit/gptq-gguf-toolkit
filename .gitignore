@@ -6,3 +6,5 @@ quant/gptq/quantized_model*
 
 
 checkpoints/*
+
+*/wandb/*
