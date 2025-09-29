@@ -132,6 +132,7 @@ def main():
             print(f"Imatrix not found, creating {expected_imatrix}...")
             run_command([
                 "third_party/llama.cpp/build/bin/llama-imatrix",
+                "-c", "4096",
                 "-m", str(base_gguf_path),
                 "-f", str(expected_calibration_data),
                 "-o", str(expected_imatrix),
