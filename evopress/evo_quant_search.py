@@ -6,6 +6,7 @@ import math
 import sys
 from tqdm import trange
 from typing import List, Tuple, Sequence, Optional, Union, Dict
+from pathlib import     
 
 import numpy as np
 import torch
@@ -326,8 +327,10 @@ def main():
     if args.log_wandb:
         assert has_wandb, "`wandb` not installed, try pip install `wandb`"
 
+        model_short_name = Path(args.model_name_or_path).name
+
         # Create meaningful run name
-        run_name = f"evo_search_{args.fitness_fn}_{args.target_bitwidth}bit_{args.generations}gen"
+        run_name = f"{model_short_name}_evo_search_{args.fitness_fn}_{args.target_bitwidth}bit_{args.generations}gen"
         if args.configuration_name:
             run_name += f"_{args.configuration_name}"
 
@@ -349,6 +352,8 @@ def main():
             "cuda_available": torch.cuda.is_available(),
             "gpu_count": torch.cuda.device_count() if torch.cuda.is_available() else 0,
         })
+
+
 
         wandb.init(
             entity="liquid-ai",

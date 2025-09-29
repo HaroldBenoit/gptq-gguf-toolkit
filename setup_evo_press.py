@@ -47,7 +47,9 @@ def download_model_if_not_local(model_path, local_dir=None):
 def create_evopress_config_name(args):
     dataset_name = Path(args.calibration_data).name
 
-    return f"evo-kl-gens-{args.generations}-{dataset_name}-configuration-{args.target_bitwidth}bit.txt"
+    name = f"{args.target_bitwidth}bit-evo-kl-gens-{args.generations}-{dataset_name}" + ("-imatrix" if args.imatrix else "")
+
+    return name + ".txt"
 
 def save_evopress_config(filename, args):
     evopress_args = {
