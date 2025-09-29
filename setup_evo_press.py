@@ -98,7 +98,7 @@ def main():
     args.model = download_model_if_not_local(args.model, local_dir=os.path.join("checkpoints", model_short_name))
 
     # Set default directories based on model name
-    database_dir = args.database_dir or f"./ep_database_{model_short_name.lower().replace('-', '_')}"
+    database_dir = args.database_dir or f"./ep_database_{model_short_name.lower().replace('-', '_')}" + ("_imatrix" if args.imatrix else "")
     quantized_dir = args.quantized_dir or f"./quantized_models_{model_short_name.lower().replace('-', '_')}" + ("_imatrix" if args.imatrix else "")
     results_dir = args.results_dir or f"./results_{model_short_name.lower().replace('-', '_')}"
     base_gguf_path = args.base_gguf_path
@@ -126,7 +126,7 @@ def main():
                 "--calibration_data", args.calibration_data,
             ])
 
-        expected_imatrix = f"{model_short_name}_{dataset_name}_imatrix.gguf"
+        expected_imatrix = Path.cwd() / f"{model_short_name}_{dataset_name}_imatrix.gguf"
 
         if not os.path.exists(expected_imatrix):
             print(f"Imatrix not found, creating {expected_imatrix}...")
