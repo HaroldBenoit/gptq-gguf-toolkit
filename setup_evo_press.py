@@ -123,7 +123,7 @@ def main():
             run_command([
                 "python", "data/create_imatrix_calibration_data.py",
                 "--model", args.model,
-                "--calibration-data", args.calibration_data,
+                "--calibration_data", args.calibration_data,
             ])
 
         expected_imatrix = f"{model_short_name}_{dataset_name}_imatrix.gguf"
@@ -168,13 +168,18 @@ def main():
 
         # Use the GGUF quantization script
 
-        run_command([
+        cmd = [
             "./run_quant.sh",
             str(base_gguf_path),
             " ".join(quant_levels),
-            "--output-dir", quantized_dir,
-            "--imatrix", str(expected_imatrix),
-        ])
+            "--output-dir", quantized_dir
+            ]
+
+        if args.imatrix:
+            cmd.append("--imatrix")
+            cmd.append(str(expected_imatrix))
+
+        run_command(cmd)
 
 
         os.chdir("../..")
