@@ -122,6 +122,43 @@ def get_c4(
             data.append(test_tokens[:, i * sequence_length : (i + 1) * sequence_length])
     return data
 
+def get_huggingface_data(data_name_or_path: str, num_tokens: int, sequence_length: int, tokenizer: AutoTokenizer, train: bool = True):
+    print_on_main(f"Loading data {data_name_or_path}")
+    tokens_to_load = num_tokens
+    dataset = load_dataset(data_name_or_path)
+    if train:
+        dataset = dataset["train"]
+    else:
+        dataset = dataset["test"] if "test" in dataset else dataset["train"]
+        
+    data = []
+    data_iter = iter(dataset)
+
+    while tokens_to_load > 0:
+        sample = next(data_iter)
+        if "conversations" in sample:
+            tokenized_sample = torch.tensor(tokenizer.apply_chat_template(sample["conversations"], tokenize=True)).reshape(1, -1)
+            ## crop to sequence length
+            tokenized_sample = tokenized_sample[:, :min(tokenized_sample.shape[1], sequence_length)]
+            data.append(tokenized_sample)
+            tokens_to_load -= tokenized_sample.shape[1]
+        elif "text" in sample:
+            tokenized_sample = tokenizer(sample["text"], return_tensors="pt", add_special_tokens=False).input_ids
+            tokenized_sample = tokenized_sample[:, :min(tokenized_sample.shape[1], tokens_to_load)]
+            # Split the sequence into multiple samples if it is too long
+            # Just throwing away extra tokens would introduce bias to the dataset
+            while tokenized_sample.shape[1] > sequence_length:
+                data.append(tokenized_sample[:, :sequence_length])
+                tokenized_sample = tokenized_sample[:, sequence_length:]
+                tokens_to_load -= sequence_length
+            data.append(tokenized_sample)
+            tokens_to_load -= tokenized_sample.shape[1]
+        else:
+            raise ValueError(f"Unknown sample format for {data_name_or_path}")
+
+    print_on_main(f"Total tokens loaded: {sum([sample.shape[1] for sample in data])}")
+
+    return data
 
 def get_data(
     data_name_or_path: str,
@@ -130,6 +167,9 @@ def get_data(
     tokenizer: AutoTokenizer,
     train: bool = True,
 ) -> List[torch.Tensor]:
+
+    # For instruct-datasets, sequence length will only be used as an upper bound for a given sequence, but sequences may be shorter
+
     # For legacy reasons only fineweb_edu is loaded on a per token granularity
     if os.path.isfile(data_name_or_path):
         data = torch.load(data_name_or_path)[:num_tokens // sequence_length]  # load data
@@ -141,6 +181,6 @@ def get_data(
     elif data_name_or_path == "fineweb_edu":
         data = get_fineweb_edu(num_tokens, sequence_length, tokenizer, train)
     else:
-        print(data_name_or_path)
-        raise ValueError("Unknown dataset.")
+        data = get_huggingface_data(data_name_or_path, num_tokens, sequence_length, tokenizer, train)
+
     return data

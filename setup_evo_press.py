@@ -45,7 +45,9 @@ def download_model_if_not_local(model_path, local_dir=None):
 
 
 def create_evopress_config_name(args):
-    return f"evo-kl-gens-{args.generations}-configuration-{args.target_bitwidth}bit.txt"
+    dataset_name = Path(args.calibration_data).name
+
+    return f"evo-kl-gens-{args.generations}-{dataset_name}-configuration-{args.target_bitwidth}bit.txt"
 
 def save_evopress_config(filename, args):
     evopress_args = {
@@ -248,7 +250,7 @@ def main():
             "--calibration_data", args.calibration_data,
             "--calibration_tokens", str(args.calibration_tokens),
             "--fitness_fn", "kl",
-            "--eval_datasets", "fineweb_edu", "wikitext2", "c4",
+            "--eval_datasets", "fineweb_edu", "LiquidAI/liquidtwo3",
             "--output_dir", str(output_dir),
             "--configuration_name", str(configuration_name),
             "--eval_tokens", "1024"
