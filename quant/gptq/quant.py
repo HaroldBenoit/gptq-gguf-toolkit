@@ -165,6 +165,7 @@ def main():
     )
 
     print(model)
+    model_type = model.config.model_type
     if not args.cpu_offload_modules:
         model = model.to(device)
 
@@ -200,6 +201,10 @@ def main():
             "embed_tokens": bit_width,
             "lm_head": bit_width,
         }
+        
+        if "lfm2" in model_type:
+            quant_config["in_proj"] = bit_width
+            quant_config["out_proj"] = bit_width
         
     if args.bit_width_configuration is not None:
         if not os.path.isfile(args.bit_width_configuration):
